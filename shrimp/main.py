@@ -1,9 +1,13 @@
 from PIL import Image, ImageEnhance, ImageFilter
+from stdio.stdin.stdin import Char
 import os
 from os import system
 from sys import argv
 import re
+import time
 from reportlab.platypus import SimpleDocTemplate, Image as RLImage
+from PyPDF2 import PdfMerger
+from PIL.ExifTags import TAGS
 
 
 def clear():
@@ -77,7 +81,9 @@ def photocopy_image(input_image, output_image):
 
 def get_img_path(folder_path):
     image_files = [
-        f for f in os.listdir(folder_path) if f.endswith((".jpg", ".png", ".gif"))
+        f
+        for f in os.listdir(folder_path)
+        if f.endswith((".jpg", ".png", ".gif", ".JPG"))
     ]
     for i in range(len(image_files)):
         image_files[i] = os.path.join(folder_path, image_files[i])
@@ -93,29 +99,52 @@ def extract_number(filename):
         return 0
 
 
-def covert_images_to_pdf(folder_path, output_filename):
-    # Get a list of all image files in the folder
-    image_files = [
-        f for f in os.listdir(folder_path) if f.endswith((".jpg", ".png", ".gif"))
-    ]
+def images_to_pdf_batch(folder_path, output_pdf_name, batch_size=20):
+    def get_image_files():
+        return [
+            f
+            for f in os.listdir(folder_path)
+            if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff"))
+        ]
 
-    # Sort the image files based on the numeric part of the file name
-    sorted_image_files = sorted(image_files, key=lambda x: extract_number(x))
+    image_files = sorted(get_image_files())  # Sort files to maintain order
+    merger = PdfMerger()
 
-    # Create a list to store the image objects
-    images = []
+    def process_batch(batch_files, batch_index):
+        batch_pdf_path = os.path.join(folder_path, f"batch_{batch_index + 1}.pdf")
+        with Image.open(os.path.join(folder_path, batch_files[0])) as first_image:
+            first_image.load()
+            if first_image.mode == "RGBA":
+                first_image = first_image.convert("RGB")
+            first_image.save(
+                batch_pdf_path,
+                save_all=True,
+                append_images=[
+                    Image.open(os.path.join(folder_path, image_file)).convert("RGB")
+                    for image_file in batch_files[1:]
+                ],
+            )
+        return batch_pdf_path
 
-    # Open each image file, resize it to fit the page size, and append it to the images list
-    for image_file in sorted_image_files:
-        image_path = os.path.join(folder_path, image_file)
-        image = Image.open(image_path)
-        image.thumbnail((700, 900), Image.LANCZOS)
-        images.append(RLImage(image_path, width=image.width, height=image.height))
-    # Create a PDF document
-    doc = SimpleDocTemplate(output_filename, pagesize=(1920, 1080))
-    doc.build(images)
+    batch_pdfs = []
+    for i in range(0, len(image_files), batch_size):
+        batch_files = image_files[i : i + batch_size]
+        batch_pdf_path = process_batch(batch_files, i // batch_size)
+        if batch_pdf_path:
+            batch_pdfs.append(batch_pdf_path)
 
-    print(f"PDF created: {output_filename}")
+    final_pdf_path = os.path.join(folder_path, output_pdf_name)
+    with open(final_pdf_path, "wb") as final_pdf:
+        for batch_pdf_path in batch_pdfs:
+            with open(batch_pdf_path, "rb") as batch_pdf:
+                merger.append(batch_pdf)
+        merger.write(final_pdf)
+    merger.close()
+
+    for pdf in batch_pdfs:
+        os.remove(pdf)
+
+    print(f"All images converted and merged into {final_pdf_path}")
 
 
 def combine_images_vertically(image1, image2, output_image):
@@ -152,11 +181,87 @@ def fphotocopy(folder_path, output_filename, output_path: str):
         )
 
 
+def get_exif(filename):
+    image = Image.open(filename)
+    image.verify()
+    return image.getexif()
+
+
+def get_labeled_exif(exif):
+    labeled = {}
+    for key, val in exif.items():
+        if key in TAGS:
+            labeled[TAGS[key]] = val
+
+    return labeled
+
+
+def get_orientation(exif):
+    if "Orientation" not in exif:
+        return None
+    return exif.get("Orientation", None)
+
+
+def is_vertical(img):
+    width, height = img.size
+    return height > width
+
+
+def rotate_image(img, orientation):
+    if orientation == 3:
+        return img.rotate(180, expand=True)
+    elif orientation == 6:
+        return img.rotate(270, expand=True)
+    elif orientation == 8:
+        return img.rotate(90, expand=True)
+    else:
+        return img
+
+
+def rotate_vertical_photos(source_folder, destination_folder):
+    # Create the destination folder if it doesn't exist
+    os.makedirs(destination_folder, exist_ok=True)
+
+    # Get a list of all image files in the source folder
+    image_files = [
+        f
+        for f in os.listdir(source_folder)
+        if f.lower().endswith((".jpg", ".png", ".gif", ".JPG"))
+    ]
+
+    # Iterate through all files in the source folder
+    for image in image_files:
+        image_path = os.path.join(source_folder, image)
+        try:
+            # Open the image file
+            with Image.open(image_path) as img:
+                # Get the EXIF data
+                exif = get_exif(image_path)
+                labeled = get_labeled_exif(exif)
+                orientation = get_orientation(labeled)
+
+                # Rotate the image based on the EXIF orientation
+                rotated_img = rotate_image(img, orientation)
+
+                # Check if the image is vertical and rotate it 90 degrees to the left
+                if is_vertical(rotated_img):
+                    rotated_img = rotated_img.rotate(90, expand=True)
+
+                # Construct the destination file path
+                destination_path = os.path.join(destination_folder, image)
+
+                # Save the rotated image to the destination folder
+                rotated_img.save(destination_path)
+                print(f"Rotated and saved {image} to {destination_folder}")
+        except IOError as e:
+            print(f"Cannot open {image}. Skipping this file. Error: {e}")
+
+
 def img_to_pdf():
     folder_path = input("Enter the path to the folder containing the images: ")
     output_filename = input("Enter the output filename (e.g., output.pdf): ")
 
-    covert_images_to_pdf(folder_path, output_filename)
+    images_to_pdf_batch(folder_path, output_filename)
     menu()
 
 
@@ -186,6 +291,13 @@ def red_img_sz():
     menu()
 
 
+def rotate_vert_photos():
+    source_folder = input("Enter the path to the source folder: ")
+    destination_folder = input("Enter the path to the destination folder: ")
+
+    rotate_vertical_photos(source_folder, destination_folder)
+
+
 def menu():
     clear()
     start()
@@ -193,8 +305,10 @@ def menu():
     print("2. Convert image to PDF")
     print("3. Combine images vertically")
     print("4. Reduce image size")
-    print("5. Exit")
-    choice = input("Enter your choice: ")
+    print("5. Rotate vertical photos")
+    print("6. Print current working directory")
+    print("7. Exit")
+    choice = Char().validin("Enter your choice: ", ["1", "2", "3", "4", "5", "6", "7"])
     if choice == "1":
         img_to_photocopy()
     elif choice == "2":
@@ -204,11 +318,13 @@ def menu():
     elif choice == "4":
         red_img_sz()
     elif choice == "5":
+        rotate_vert_photos()
+    elif choice == "6":
+        print(os.getcwd())
+        time.sleep(1)
+        menu()
+    elif choice == "7":
         exit()
     else:
         print("Invalid choice. Please try again.")
         menu()
-
-
-if __name__ == "__main__":
-    menu()
