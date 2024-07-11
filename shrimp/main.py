@@ -5,7 +5,6 @@ from os import system
 from sys import argv
 import re
 import time
-from reportlab.platypus import SimpleDocTemplate, Image as RLImage
 from PyPDF2 import PdfMerger
 from PIL.ExifTags import TAGS
 
