@@ -1,6 +1,9 @@
 class Text:
     """Class for handling text input."""
 
+    def __init__(self, txt=str()):
+        self.value = str(txt)
+
     def __str__(self):
         return self.value
 
@@ -32,7 +35,8 @@ class Text:
         return stdin.isalpha()
 
     def alpha_and_spaces_in(self, prompt) -> str:
-        """Prompt for alphabetic input. (with spaces or with no spaces but no numbers or symbols)"""
+        """Prompt for alphabetic input.
+        (with spaces or with no spaces but no numbers or symbols)"""
         stdin = input(prompt)
         self.value = (
             stdin
@@ -41,17 +45,20 @@ class Text:
         )
         return self.value
 
-    @staticmethod
-    def isname(stdin) -> bool:
+    def isname(self, stdin="") -> bool:
         """Check if input is a name."""
-        if " " in stdin:
-            return "".join(stdin.split(" ")).isalpha()
-        return stdin.isalpha()
+        if len(stdin) > 1 and " " in stdin:
+            return Text.is_alpha_and_spaces(stdin)
+        else:
+            if " " in self.validate:
+                return Text.is_alpha_and_spaces(self.validate)
+        return False
 
     def namein(self, prompt) -> str:
         """Prompt for alphabetic input. (no numbers or symbols)"""
         stdin = input(prompt)
-        self.value = stdin if self.isname(stdin) else self.namein(prompt)
+        self.validate = stdin
+        self.value = stdin if self.isname() else self.namein(prompt)
         return self.value
 
 
@@ -81,51 +88,72 @@ class Symbol:
 class Number:
     """Class for handling number input."""
 
-    @staticmethod
-    def isnum(stdin) -> bool:
+    def isnum(self, stdin="") -> bool:
         """Check if input is a number."""
-        if "".join(stdin.split(".")).isnumeric() and "." in stdin:
-            return True
-        return False
+        if len(stdin) > 1:
+            if self.isint(stdin) or self.isfloat(stdin):
+                return True
+            else:
+                return False
+        else:
+            if self.isint() or self.isfloat():
+                return True
+            else:
+                return False
 
     def numin(self, prompt) -> int | float:
         """Prompt for numeric input. (int or float)"""
         stdin = input(prompt)
+        self.validate = stdin
         self.value = (
             float(stdin)
-            if (Number.isfloat(stdin))
-            else (int(stdin) if Number.isint(stdin) else self.numin(prompt))
+            if self.isfloat()
+            else (int(stdin) if self.isint() else self.numin(prompt))
         )
         return self.value
 
-    @staticmethod
-    def isint(stdin) -> bool:
-        """Check if input is an integer."""
-        try:
-            int(stdin)
-            return True
-        except ValueError:
-            return False
+    def isint(self, stdin="") -> bool:
+        """Check if input is a float."""
 
-    def intin(self, prompt) -> int:
-        """Prompt for integer input."""
+        def check(stdin):
+            try:
+                int(stdin)
+                return True
+            except ValueError:
+                return False
+
+        if len(stdin) > 1:
+            return check(stdin)
+        else:
+            return check(stdin)
+
+    def intin(self, prompt) -> float:
+        """Prompt for float input."""
         stdin = input(prompt)
-        self.value = int(stdin) if stdin.isnumeric() else self.intin(prompt)
+        self.validate = stdin
+        self.value = int(self.validate) if self.isint() else self.intin(prompt)
         return self.value
 
-    @staticmethod
-    def isfloat(stdin) -> bool:
+    def isfloat(self, stdin="") -> bool:
         """Check if input is a float."""
-        try:
-            float(stdin)
-            return True
-        except ValueError:
-            return False
+        if len(stdin) > 1:
+            try:
+                float(stdin)
+                return True
+            except ValueError:
+                return False
+        else:
+            try:
+                float(self.validate)
+                return True
+            except ValueError:
+                return False
 
     def floatin(self, prompt) -> float:
         """Prompt for float input."""
         stdin = input(prompt)
-        self.value = float(stdin) if Number.isfloat(stdin) else self.floatin(prompt)
+        self.validate = stdin
+        self.value = float(self.validate) if self.isfloat() else self.floatin(prompt)
         return self.value
 
 
@@ -133,7 +161,7 @@ class Char:
     """Class for handling character input."""
 
     def __int__(self):
-        if Number.isint(self.value):
+        if self.isint(self.value):
             self.value = int(self.value)
             return self.value
         else:
